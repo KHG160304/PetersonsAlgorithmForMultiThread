@@ -14,11 +14,12 @@ void CleanUp(void);
 unsigned _stdcall WorkerThread1(void* args);
 unsigned _stdcall WorkerThread2(void* args);
 
+long gSpinLock = 0;
+
 SRWLOCK lock = RTL_SRWLOCK_INIT;
 bool flag[2] = { false, false };
 char turn;
-int tmpCount1;
-int tmpCount2;
+
 unsigned long count = 0;
 
 int thread1After2Cnt = 0;
@@ -30,14 +31,23 @@ int thread2Stat = 0;
 bool srwlockFlag1 = false;
 bool srwlockFlag2 = false;
 
+int otherFlag1;
+int otherFlag2;
+
+int tmpCount1 = 0;
+int tmpCount2 = 0;
+
+//#define SPIN_LOCK
+#define PETERSON
+
 int main()
 {
 	Init();
 
 	DWORD result = WaitForMultipleObjects(TOTAL_THREAD_CNT, hThreadArr, true, INFINITE);
 	printf("count: %d\n", count);
-	printf("tmpCount1: %d\n", tmpCount1);
-	printf("tmpCount2: %d\n", tmpCount2);
+	printf("thread1After2Cnt: %d\n", thread1After2Cnt);
+	printf("thread2After1Cnt: %d\n", thread2After1Cnt);
 
 	CleanUp();
 	return 0;
@@ -59,23 +69,27 @@ unsigned _stdcall WorkerThread1(void* args)
 {
 	for (int i = 0; i < 100000000; ++i)
 	{
+#ifdef PETERSON
+		_InterlockedExchange((long*)&thread1Stat, 1);
 		flag[0] = true;
 		turn = 0;
-		while (flag[1] == true && turn == 0);
-		//AcquireSRWLockExclusive(&lock);
-		srwlockFlag1 = true;
-		if (srwlockFlag2 == false)/*상대가 임계점 진입 안했음*/
+		while (flag[1] == true && (tmpCount1 = _InterlockedCompareExchange((long*)&flag[1], false, false)) == true
+			&& turn == 0);
+		_InterlockedExchange((long*)&thread1Stat, 2);
+		if ((_InterlockedCompareExchange((long*)&thread2Stat, 2, 2) == 2 && thread2Stat == 2)) // 
 		{
-			if (srwlockFlag2 == true)/*상대가 임계점 진입 함*/
-			{
-				++tmpCount1;
-			}
-			//++count;
-			InterlockedIncrement((long*)&count);
+			++thread1After2Cnt;
 		}
-		srwlockFlag1 = false;
+		++count;
+		_InterlockedExchange((long*)&thread1Stat, 3);
 		flag[0] = false;
-		//ReleaseSRWLockExclusive(&lock);
+		_InterlockedExchange((long*)&thread1Stat, 4);
+#endif // PETERSON
+#ifdef SPIN_LOCK
+		while (InterlockedExchange((long*)&gSpinLock, 1) != 0);
+		++count;
+		InterlockedExchange((long*)&gSpinLock, 0);
+#endif // SPIN_LOCK
 	}
 
 	return 0;
@@ -85,23 +99,31 @@ unsigned _stdcall WorkerThread2(void* args)
 {
 	for (int i = 0; i < 100000000; ++i)
 	{
+#ifdef PETERSON
+		_InterlockedExchange((long*)&thread2Stat, 1);
 		flag[1] = true;
 		turn = 1;
-		while (flag[0] == true && turn == 1);
-		//AcquireSRWLockExclusive(&lock);
-		srwlockFlag2 = true;
-		if (srwlockFlag1 == false)/*상대가 임계점 진입 안했음*/
+		/*
+			flag[0] 값을 미리 로드 했다.
+			미리 로드된 값은 false 이다.
+		*/
+		while (flag[0] == true && (tmpCount2 = _InterlockedCompareExchange((long*)&flag[0], false, false)) == true
+			&& turn == 1);
+		_InterlockedExchange((long*)&thread2Stat, 2);
+		if ((_InterlockedCompareExchange((long*)&thread1Stat, 2, 2) == 2 && thread2Stat == 2))
 		{
-			if (srwlockFlag1 == true)/*상대가 임계점 진입 함*/
-			{
-				++tmpCount2;
-			}
-			//++count;
-			InterlockedIncrement((long*)&count);
+			++thread2After1Cnt;
 		}
-		srwlockFlag2 = false;
+		++count;
+		_InterlockedExchange((long*)&thread2Stat, 3);
 		flag[1] = false;
-		//ReleaseSRWLockExclusive(&lock);
+		_InterlockedExchange((long*)&thread2Stat, 4);
+#endif // PETERSON
+#ifdef SPIN_LOCK
+		while (InterlockedExchange((long*)&gSpinLock, 1) != 0);
+		++count;
+		InterlockedExchange((long*)&gSpinLock, 0);
+#endif // SPIN_LOCK
 	}
 
 	return 0;
