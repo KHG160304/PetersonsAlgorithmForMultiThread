@@ -17,7 +17,7 @@ unsigned _stdcall WorkerThread2(void* args);
 long gSpinLock = 0;
 
 SRWLOCK lock = RTL_SRWLOCK_INIT;
-bool flag[2] = { false, false };
+int flag[2] = { false, false };
 char turn;
 
 unsigned long count = 0;
@@ -34,8 +34,8 @@ bool srwlockFlag2 = false;
 int otherFlag1;
 int otherFlag2;
 
-int tmpCount1 = 0;
-int tmpCount2 = 0;
+int tmpCount1;
+int tmpCount2;
 
 //#define SPIN_LOCK
 #define PETERSON
@@ -72,13 +72,15 @@ unsigned _stdcall WorkerThread1(void* args)
 #ifdef PETERSON
 		_InterlockedExchange((long*)&thread1Stat, 1);
 		flag[0] = true;
-		turn = 0;
-		while (flag[1] == true && (tmpCount1 = _InterlockedCompareExchange((long*)&flag[1], false, false)) == true
+		turn = 0;		
+		while (flag[1] == true 
+			&& (tmpCount1 = _InterlockedCompareExchange((long*)(flag + 1), false, false)) == true
 			&& turn == 0);
 		_InterlockedExchange((long*)&thread1Stat, 2);
-		if ((_InterlockedCompareExchange((long*)&thread2Stat, 2, 2) == 2 && thread2Stat == 2)) // 
+		while ((_InterlockedCompareExchange((long*)&thread2Stat, 2, 2) == 2 || _InterlockedCompareExchange((long*)&thread2Stat, 3, 3) == 3) 
+			&& tmpCount1 == false && tmpCount2 == false)
 		{
-			++thread1After2Cnt;
+			InterlockedIncrement((long*)&thread2After1Cnt);
 		}
 		++count;
 		_InterlockedExchange((long*)&thread1Stat, 3);
@@ -107,12 +109,14 @@ unsigned _stdcall WorkerThread2(void* args)
 			flag[0] 값을 미리 로드 했다.
 			미리 로드된 값은 false 이다.
 		*/
-		while (flag[0] == true && (tmpCount2 = _InterlockedCompareExchange((long*)&flag[0], false, false)) == true
+		while (flag[0] == true 
+			&& (tmpCount2 = _InterlockedCompareExchange((long*)flag, false, false)) == true
 			&& turn == 1);
 		_InterlockedExchange((long*)&thread2Stat, 2);
-		if ((_InterlockedCompareExchange((long*)&thread1Stat, 2, 2) == 2 && thread2Stat == 2))
+		while ((_InterlockedCompareExchange((long*)&thread1Stat, 2, 2) == 2 || _InterlockedCompareExchange((long*)&thread1Stat, 3, 3) == 3)
+			&& tmpCount2 == false && tmpCount1 == false) // 
 		{
-			++thread2After1Cnt;
+			InterlockedIncrement((long*)&thread2After1Cnt);
 		}
 		++count;
 		_InterlockedExchange((long*)&thread2Stat, 3);
