@@ -67,18 +67,22 @@ void CleanUp(void)
 
 unsigned _stdcall WorkerThread1(void* args)
 {
+	int storeFlag;
 	for (int i = 0; i < 100000000; ++i)
 	{
 #ifdef PETERSON
 		_InterlockedExchange((long*)&thread1Stat, 1);
 		flag[0] = true;
-		turn = 0;		
+		turn = 0;
+		storeFlag = flag[1];
 		while (flag[1] == true 
-			&& (tmpCount1 = _InterlockedCompareExchange((long*)(flag + 1), false, false)) == true
+			//&& (tmpCount1 = _InterlockedCompareExchange((long*)(flag + 1), false, false)) == true
 			&& turn == 0);
 		_InterlockedExchange((long*)&thread1Stat, 2);
 		while ((_InterlockedCompareExchange((long*)&thread2Stat, 2, 2) == 2 || _InterlockedCompareExchange((long*)&thread2Stat, 3, 3) == 3) 
-			&& tmpCount1 == false && tmpCount2 == false)
+			//&& tmpCount1 == false && tmpCount2 == false
+			&& storeFlag == false
+			)
 		{
 			InterlockedIncrement((long*)&thread2After1Cnt);
 		}
@@ -99,6 +103,7 @@ unsigned _stdcall WorkerThread1(void* args)
 
 unsigned _stdcall WorkerThread2(void* args)
 {
+	int storeFlag;
 	for (int i = 0; i < 100000000; ++i)
 	{
 #ifdef PETERSON
@@ -109,12 +114,14 @@ unsigned _stdcall WorkerThread2(void* args)
 			flag[0] 값을 미리 로드 했다.
 			미리 로드된 값은 false 이다.
 		*/
+		storeFlag = flag[0];
 		while (flag[0] == true 
-			&& (tmpCount2 = _InterlockedCompareExchange((long*)flag, false, false)) == true
+			//&& (tmpCount2 = _InterlockedCompareExchange((long*)flag, false, false)) == true
 			&& turn == 1);
 		_InterlockedExchange((long*)&thread2Stat, 2);
 		while ((_InterlockedCompareExchange((long*)&thread1Stat, 2, 2) == 2 || _InterlockedCompareExchange((long*)&thread1Stat, 3, 3) == 3)
-			&& tmpCount2 == false && tmpCount1 == false) // 
+			//&& tmpCount2 == false && tmpCount1 == false
+			&& storeFlag == false) // 
 		{
 			InterlockedIncrement((long*)&thread2After1Cnt);
 		}
